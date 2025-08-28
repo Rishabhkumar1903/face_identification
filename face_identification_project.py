@@ -47,7 +47,9 @@ def set_bg_local(image_file):
         unsafe_allow_html=True
     )
 
-set_bg_local("face_identification_2.jpg")
+# 🔥 Apna background image rakhna
+if os.path.exists("face_identification_2.jpg"):
+    set_bg_local("face_identification_2.jpg")
 
 # =====================
 # Title
@@ -62,7 +64,8 @@ st.markdown("""
 # Sidebar
 # =====================
 with st.sidebar:
-    st.image("rishu.jpg")
+    if os.path.exists("rishu.jpg"):
+        st.image("rishu.jpg")
     st.header("💬 CONTACT US")
     st.text("📞 8809972414")
     st.text("✉️ rishabhverma190388099@gmail.com")
@@ -70,13 +73,13 @@ with st.sidebar:
     st.text("We are a group of ML engineers working on face Identification")
 
 # =====================
-# Face Capture + Train + Predict
-# =====================
-
 # Haarcascade
+# =====================
 face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
 
+# =====================
 # Session States
+# =====================
 if "name" not in st.session_state:
     st.session_state.name = ""
 
@@ -84,7 +87,9 @@ if "name" not in st.session_state:
 if not os.path.exists("faces_dataset"):
     os.makedirs("faces_dataset")
 
-# 1️⃣ Capture Faces with WebRTC
+# =====================
+# 1️⃣ Capture Faces
+# =====================
 class FaceCapture(VideoTransformerBase):
     def __init__(self):
         self.count = 0
@@ -104,7 +109,9 @@ class FaceCapture(VideoTransformerBase):
         return img
 
 
+# =====================
 # 2️⃣ Train Model
+# =====================
 def train_model():
     faces, labels = [], []
     label_map = {}
@@ -135,7 +142,9 @@ def train_model():
         pickle.dump(label_map, f)
 
 
-# 3️⃣ Predict Realtime with WebRTC
+# =====================
+# 3️⃣ Predict Faces
+# =====================
 class FaceRecognition(VideoTransformerBase):
     def __init__(self):
         self.recognizer = cv2.face.LBPHFaceRecognizer_create()
@@ -154,14 +163,12 @@ class FaceRecognition(VideoTransformerBase):
             id_, conf = self.recognizer.predict(roi_gray)
             name = self.reverse_map.get(id_, "Unknown")
 
-            # 🔥 Black background rectangle behind name
+            # Black background rectangle behind text
             cv2.rectangle(img, (x, y-40), (x+w, y), (0, 0, 0), -1)
-
-            # 🔥 White text on black
+            # White text
             cv2.putText(img, f"{name} ({int(conf)})", (x+5, y-10),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
-
-            # 🔵 Face bounding box
+            # Bounding box
             cv2.rectangle(img, (x, y), (x+w, y+h), (255, 0, 0), 2)
 
         return img
@@ -185,4 +192,7 @@ with tab2:
         st.success("✅ Model trained successfully!")
 
 with tab3:
-    webrtc_streamer(key="recognition", video_transformer_factory=FaceRecognition)
+    if os.path.exists("face_recognizer.yml") and os.path.exists("labels.pkl"):
+        webrtc_streamer(key="recognition", video_transformer_factory=FaceRecognition)
+    else:
+        st.warning("⚠️ Please train the model first.")
