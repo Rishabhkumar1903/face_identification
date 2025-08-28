@@ -81,10 +81,9 @@ if "name" not in st.session_state:
 if not os.path.exists("faces_dataset"):
     os.makedirs("faces_dataset")
 
-# Global lock for thread safety
-lock = threading.Lock()
+lock = threading.Lock()  # Thread safety
 
-# 1️⃣ Capture Faces with WebRTC
+# 1️⃣ Capture Faces
 class FaceCapture(VideoTransformerBase):
     def __init__(self):
         self.count = 0
@@ -94,22 +93,23 @@ class FaceCapture(VideoTransformerBase):
         img = frame.to_ndarray(format="bgr24")
 
         # Resize for speed
-        img = cv2.resize(img, (320, 240))
-
+        img = cv2.resize(img, (480, 360))
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-        # Skip alternate frames
+        # Skip every 3rd frame
         self.frame_skip += 1
-        if self.frame_skip % 2 != 0:
+        if self.frame_skip % 3 != 0:
             return img
 
         faces = face_cascade.detectMultiScale(gray, 1.3, 5)
 
         for (x, y, w, h) in faces:
-            self.count += 1
-            face_img = gray[y:y+h, x:x+w]
-            file_name = f"faces_dataset/{st.session_state.name}_{self.count}_{datetime.now().strftime('%Y%m%d%H%M%S')}.jpg"
-            cv2.imwrite(file_name, face_img)
+            with lock:
+                self.count += 1
+                face_img = gray[y:y+h, x:x+w]
+                file_name = f"faces_dataset/{st.session_state.name}_{self.count}_{datetime.now().strftime('%Y%m%d%H%M%S')}.jpg"
+                cv2.imwrite(file_name, face_img)
+
             cv2.rectangle(img, (x, y), (x+w, y+h), (255, 0, 0), 2)
 
         return img
@@ -146,7 +146,7 @@ def train_model():
         pickle.dump(label_map, f)
 
 
-# 3️⃣ Predict Realtime with WebRTC
+# 3️⃣ Predict Faces
 class FaceRecognition(VideoTransformerBase):
     def __init__(self):
         self.recognizer = cv2.face.LBPHFaceRecognizer_create()
@@ -158,14 +158,12 @@ class FaceRecognition(VideoTransformerBase):
 
     def transform(self, frame):
         img = frame.to_ndarray(format="bgr24")
-
-        # Resize for smoothness
-        img = cv2.resize(img, (320, 240))
+        img = cv2.resize(img, (480, 360))
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-        # Skip alternate frames
+        # Skip every 3rd frame
         self.frame_skip += 1
-        if self.frame_skip % 2 != 0:
+        if self.frame_skip % 3 != 0:
             return img
 
         faces = face_cascade.detectMultiScale(gray, 1.3, 5)
@@ -175,10 +173,9 @@ class FaceRecognition(VideoTransformerBase):
             id_, conf = self.recognizer.predict(roi_gray)
             name = self.reverse_map.get(id_, "Unknown")
 
-            # 🔥 Black background rectangle behind name
+            # 🔥 Black rectangle background
             cv2.rectangle(img, (x, y-40), (x+w, y), (0, 0, 0), -1)
-
-            # 🔥 White text on black
+            # 🔥 White text
             cv2.putText(img, f"{name} ({int(conf)})", (x+5, y-10),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
 
