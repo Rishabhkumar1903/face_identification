@@ -6,6 +6,7 @@ import pickle
 from datetime import datetime
 import base64
 from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
+import threading
 
 st.set_page_config(page_title="Face Identification", layout="wide")
 
@@ -47,9 +48,7 @@ def set_bg_local(image_file):
         unsafe_allow_html=True
     )
 
-# 🔥 Apna background image rakhna
-if os.path.exists("face_identification_2.jpg"):
-    set_bg_local("face_identification_2.jpg")
+set_bg_local("face_identification_2.jpg")
 
 # =====================
 # Title
@@ -64,8 +63,7 @@ st.markdown("""
 # Sidebar
 # =====================
 with st.sidebar:
-    if os.path.exists("rishu.jpg"):
-        st.image("rishu.jpg")
+    st.image("rishu.jpg")
     st.header("💬 CONTACT US")
     st.text("📞 8809972414")
     st.text("✉️ rishabhverma190388099@gmail.com")
@@ -73,30 +71,38 @@ with st.sidebar:
     st.text("We are a group of ML engineers working on face Identification")
 
 # =====================
-# Haarcascade
+# Face Capture + Train + Predict
 # =====================
 face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
 
-# =====================
-# Session States
-# =====================
 if "name" not in st.session_state:
     st.session_state.name = ""
 
-# Dataset dir
 if not os.path.exists("faces_dataset"):
     os.makedirs("faces_dataset")
 
-# =====================
-# 1️⃣ Capture Faces
-# =====================
+# Global lock for thread safety
+lock = threading.Lock()
+
+# 1️⃣ Capture Faces with WebRTC
 class FaceCapture(VideoTransformerBase):
     def __init__(self):
         self.count = 0
+        self.frame_skip = 0
 
     def transform(self, frame):
         img = frame.to_ndarray(format="bgr24")
+
+        # Resize for speed
+        img = cv2.resize(img, (320, 240))
+
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+        # Skip alternate frames
+        self.frame_skip += 1
+        if self.frame_skip % 2 != 0:
+            return img
+
         faces = face_cascade.detectMultiScale(gray, 1.3, 5)
 
         for (x, y, w, h) in faces:
@@ -109,9 +115,7 @@ class FaceCapture(VideoTransformerBase):
         return img
 
 
-# =====================
 # 2️⃣ Train Model
-# =====================
 def train_model():
     faces, labels = [], []
     label_map = {}
@@ -142,9 +146,7 @@ def train_model():
         pickle.dump(label_map, f)
 
 
-# =====================
-# 3️⃣ Predict Faces
-# =====================
+# 3️⃣ Predict Realtime with WebRTC
 class FaceRecognition(VideoTransformerBase):
     def __init__(self):
         self.recognizer = cv2.face.LBPHFaceRecognizer_create()
@@ -152,10 +154,20 @@ class FaceRecognition(VideoTransformerBase):
         with open("labels.pkl", "rb") as f:
             self.label_map = pickle.load(f)
         self.reverse_map = {v: k for k, v in self.label_map.items()}
+        self.frame_skip = 0
 
     def transform(self, frame):
         img = frame.to_ndarray(format="bgr24")
+
+        # Resize for smoothness
+        img = cv2.resize(img, (320, 240))
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+        # Skip alternate frames
+        self.frame_skip += 1
+        if self.frame_skip % 2 != 0:
+            return img
+
         faces = face_cascade.detectMultiScale(gray, 1.3, 5)
 
         for (x, y, w, h) in faces:
@@ -163,12 +175,14 @@ class FaceRecognition(VideoTransformerBase):
             id_, conf = self.recognizer.predict(roi_gray)
             name = self.reverse_map.get(id_, "Unknown")
 
-            # Black background rectangle behind text
+            # 🔥 Black background rectangle behind name
             cv2.rectangle(img, (x, y-40), (x+w, y), (0, 0, 0), -1)
-            # White text
+
+            # 🔥 White text on black
             cv2.putText(img, f"{name} ({int(conf)})", (x+5, y-10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
-            # Bounding box
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+
+            # 🔵 Face bounding box
             cv2.rectangle(img, (x, y), (x+w, y+h), (255, 0, 0), 2)
 
         return img
@@ -182,7 +196,11 @@ tab1, tab2, tab3 = st.tabs(["📸 Capture Face", "📚 Train Model", "🔍 Predi
 with tab1:
     st.session_state.name = st.text_input("Enter Name:", st.session_state.name)
     if st.session_state.name.strip() != "":
-        webrtc_streamer(key="capture", video_transformer_factory=FaceCapture)
+        webrtc_streamer(
+            key="capture",
+            video_transformer_factory=FaceCapture,
+            media_stream_constraints={"video": True, "audio": False}
+        )
     else:
         st.error("Please enter a name before capturing.")
 
@@ -192,7 +210,8 @@ with tab2:
         st.success("✅ Model trained successfully!")
 
 with tab3:
-    if os.path.exists("face_recognizer.yml") and os.path.exists("labels.pkl"):
-        webrtc_streamer(key="recognition", video_transformer_factory=FaceRecognition)
-    else:
-        st.warning("⚠️ Please train the model first.")
+    webrtc_streamer(
+        key="recognition",
+        video_transformer_factory=FaceRecognition,
+        media_stream_constraints={"video": True, "audio": False}
+    )
