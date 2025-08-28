@@ -6,7 +6,7 @@ import pickle
 # ====================================
 # 1️⃣ Capture Face Function
 # ====================================
-def capture_face(name):
+def capture_face(name, max_images=100):
     cap = cv2.VideoCapture(0)
     face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
 
@@ -27,11 +27,14 @@ def capture_face(name):
             face_img = gray[y:y+h, x:x+w]
             file_name = f"faces_dataset/{name}_{count}.jpg"
             cv2.imwrite(file_name, face_img)
+
             cv2.rectangle(frame, (x, y), (x+w, y+h), (255, 0, 0), 2)
+            cv2.putText(frame, f"Capturing {count}/{max_images}", (10, 30),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
         cv2.imshow("📸 Capturing Faces - Press Q to Stop", frame)
 
-        if cv2.waitKey(25) & 0xFF == ord('q'):
+        if cv2.waitKey(25) & 0xFF == ord('q') or count >= max_images:
             break
 
     cap.release()
@@ -45,6 +48,10 @@ def train_model():
     faces, labels = [], []
     label_map = {}
     current_id = 0
+
+    if not os.path.exists("faces_dataset") or len(os.listdir("faces_dataset")) == 0:
+        print("⚠️ No dataset found! Please capture faces first.")
+        return
 
     for file in os.listdir("faces_dataset"):
         if file.endswith(".jpg"):
@@ -65,6 +72,8 @@ def train_model():
     recognizer.save("face_recognizer.yml")
     with open("labels.pkl", "wb") as f:
         pickle.dump(label_map, f)
+
+    print("✅ Training complete. Model saved as face_recognizer.yml")
 
 
 # ====================================
@@ -95,9 +104,15 @@ def predict_realtime():
             id_, conf = recognizer.predict(roi_gray)
             name = reverse_label_map.get(id_, "Unknown")
 
-            cv2.putText(frame, f"{name} ({int(conf)})", (x, y-10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
-            cv2.rectangle(frame, (x, y), (x+w, y+h), (255, 0, 0), 2)
+            # 🔥 Black rectangle behind text
+            cv2.rectangle(frame, (x, y-25), (x+w, y), (0, 0, 0), -1)
+
+            # 🔥 White text with confidence
+            cv2.putText(frame, f"{name} {int(conf)}%", (x+5, y-5),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+
+            # Face rectangle
+            cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
 
         cv2.imshow("🎥 Face Recognition - Press Q to Exit", frame)
 
