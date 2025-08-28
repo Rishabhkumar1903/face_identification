@@ -10,6 +10,23 @@ from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
 st.set_page_config(page_title="Face Identification", layout="wide")
 
 # =====================
+# Custom CSS (Sidebar Black)
+# =====================
+st.markdown(
+    """
+    <style>
+    [data-testid="stSidebar"] {
+        background-color: black;
+    }
+    [data-testid="stSidebar"] * {
+        color: white !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+# =====================
 # Background function
 # =====================
 def set_bg_local(image_file):
@@ -137,8 +154,14 @@ class FaceRecognition(VideoTransformerBase):
             id_, conf = self.recognizer.predict(roi_gray)
             name = self.reverse_map.get(id_, "Unknown")
 
-            cv2.putText(img, f"{name} ({int(conf)})", (x, y-10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+            # 🔥 Black background rectangle behind name
+            cv2.rectangle(img, (x, y-40), (x+w, y), (0, 0, 0), -1)
+
+            # 🔥 White text on black
+            cv2.putText(img, f"{name} ({int(conf)})", (x+5, y-10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
+
+            # 🔵 Face bounding box
             cv2.rectangle(img, (x, y), (x+w, y+h), (255, 0, 0), 2)
 
         return img
