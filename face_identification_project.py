@@ -11,6 +11,12 @@ import threading
 # ---------- Page config ----------
 st.set_page_config(page_title="Face Identification", layout="wide")
 
+# ---------- Ensure session_state keys exist ----------
+if "name" not in st.session_state:
+    st.session_state["name"] = ""
+if "capture_running" not in st.session_state:
+    st.session_state["capture_running"] = False
+
 # ---------- CSS ----------
 st.markdown(
     """
@@ -26,7 +32,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# ---------- Background ----------
+# ---------- Background helper ----------
 def set_bg_local(image_file):
     if os.path.exists(image_file):
         import base64
@@ -115,6 +121,7 @@ def train_model():
 # ---------- Video Processors ----------
 class FaceCaptureProcessor(VideoProcessorBase):
     def __init__(self, name: str, save_every: int = 6):
+        # NOTE: we only use the plain string 'name' here (no st.*)
         self.name = name or "unknown"
         self.save_every = max(1, int(save_every))
         self.frame_count = 0
@@ -197,23 +204,25 @@ tab1, tab2, tab3 = st.tabs(["📸 Capture Face", "📚 Train Model", "🔍 Predi
 # CAPTURE
 with tab1:
     name_input = st.text_input("Enter Name:", value=st.session_state.get("name", ""))
+    # Update session state with the typed name
     st.session_state["name"] = name_input.strip()
 
-    # Start/Stop Button
-    if "capture_running" not in st.session_state:
-        st.session_state["capture_running"] = False
-
+    # toggle for capture
     if st.button("🎥 Start/Stop Camera"):
         st.session_state["capture_running"] = not st.session_state["capture_running"]
 
-    if st.session_state["name"] and st.session_state["capture_running"]:
+    # create a local copy of the name (so we don't reference st inside worker)
+    name_local = st.session_state["name"]
+
+    if name_local and st.session_state["capture_running"]:
+        # Pass name_local into the factory via default-arg so worker doesn't access st
         webrtc_streamer(
             key="capture",
-            video_processor_factory=lambda: FaceCaptureProcessor(st.session_state["name"], save_every=6),
+            video_processor_factory=(lambda name=name_local: FaceCaptureProcessor(name, save_every=6)),
             media_stream_constraints={"video": True, "audio": False},
             async_processing=True,
         )
-    elif not st.session_state["name"]:
+    elif not name_local:
         st.warning("Enter a name before starting capture.")
 
 # TRAIN
@@ -228,7 +237,13 @@ with tab2:
 
 # PREDICT
 with tab3:
-    if os.path.exists(MODEL_PATH) and os.path.exists(LABELS_PATH):
+    # optional toggle for predict as well
+    if st.button("▶ Start Prediction"):
+        st.session_state["predict_running"] = True
+    if st.button("⏹ Stop Prediction"):
+        st.session_state["predict_running"] = False
+
+    if st.session_state.get("predict_running", False):
         webrtc_streamer(
             key="recognition",
             video_processor_factory=FaceRecognitionProcessor,
@@ -236,4 +251,4 @@ with tab3:
             async_processing=True,
         )
     else:
-        st.warning("Model not found. Capture faces & train the model first.")
+        st.info("Start Prediction to run recognition (after training).")
